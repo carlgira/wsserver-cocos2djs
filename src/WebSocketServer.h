@@ -30,8 +30,7 @@ namespace network {
 class WsServerThreadHelper;
 
 /**
- * WebSocketServer is wrapper of the libwebsockets-protocol, let the develop could call the websocket easily.
- * Please note that all public methods of WebSocketServer have to be invoked on Cocos Thread.
+ * WebSocketServer is wrapper of the libwebsockets-protocol
  */
 class CC_DLL WebSocketServer
 {
@@ -97,7 +96,7 @@ public:
         /** Destructor of Delegate. */
         virtual ~Delegate() {}
         /**
-         * This function to be called after the client connection complete a handshake with the remote server.
+         * This function to be called after the client connection complete a handshake with the  server.
          * This means that the WebSocketServer connection is ready to send and receive data.
          * 
          * @param ws The WebSocketServer object connected
@@ -164,7 +163,25 @@ public:
     void send(int socketId, const unsigned char* binaryMsg, unsigned int len);
 
 
-    void start();
+    /**
+     *  @brief Sends string data to websocket client.
+     *  
+     *  @param message string data.
+     *  @lua sendstring
+     */
+    void broadcast(const std::string& message);
+
+    /**
+     *  @brief Sends binary data to websocket client.
+     *  
+     *  @param binaryMsg binary string data.
+     *  @param len the size of binary string data.
+     *  @lua sendstring
+     */
+    void broadcast(const unsigned char* binaryMsg, unsigned int len);
+
+
+    
     /**
      *  @brief Closes the connection to server synchronously.
      *  @note It's a synchronous method, it will not return until websocket thread exits.
@@ -205,6 +222,8 @@ private:
     void onServerUp();
 
     void onServerDown();
+
+    void onInit();
 
 private:
     std::mutex   _readStateMutex;

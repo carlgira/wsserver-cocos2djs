@@ -43,7 +43,7 @@ public:
 
         JS::RootedValue datasocketID(cx);
         datasocketID = int32_to_jsval(cx, socketID);
-        JS_SetProperty(cx, jsobj, "socketID", datasocketID);
+        JS_SetProperty(cx, jsobj, "socketId", datasocketID);
 
         jsval args = OBJECT_TO_JSVAL(jsobj);
 
@@ -68,7 +68,7 @@ public:
 
         JS::RootedValue datasocketID(cx);
         datasocketID = int32_to_jsval(cx, socketID);
-        JS_SetProperty(cx, jsobj, "socketID", datasocketID);
+        JS_SetProperty(cx, jsobj, "socketId", datasocketID);
 
         JS::RootedValue args(cx, OBJECT_TO_JSVAL(jsobj));
         if (data.isBinary)
@@ -122,7 +122,7 @@ public:
 
             JS::RootedValue datasocketID(cx);
             datasocketID = int32_to_jsval(cx, socketID);
-            JS_SetProperty(cx, jsobj, "socketID", datasocketID);
+            JS_SetProperty(cx, jsobj, "socketId", datasocketID);
             
             JS::RootedValue args(cx, OBJECT_TO_JSVAL(jsobj));
             ScriptingCore::getInstance()->executeFunctionWithOwner(OBJECT_TO_JSVAL(_JSDelegate.ref()), "onDisconnection", 1, args.address());
@@ -279,6 +279,67 @@ bool js_cocos2dx_extension_WebSocketServer_send(JSContext *cx, uint32_t argc, js
     return true;
 }
 
+bool js_cocos2dx_extension_WebSocketServer_broadcast(JSContext *cx, uint32_t argc, jsval *vp)
+{
+    JS::CallArgs argv = JS::CallArgsFromVp(argc, vp);
+    JS::RootedObject obj(cx, argv.thisv().toObjectOrNull());
+    js_proxy_t *proxy = jsb_get_js_proxy(obj);
+    WebSocketServer* cobj = (WebSocketServer *)(proxy ? proxy->ptr : NULL);
+    JSB_PRECONDITION2( cobj, cx, false, "Invalid Native Object");
+
+    if(argc == 1)
+    {
+        bool ok = true;
+        
+        if (argv[0].isString())
+        {
+            ssize_t len = JS_GetStringLength(argv[0].toString());
+            std::string data;
+            jsval_to_std_string(cx, argv[0], &data);
+
+            if (data.empty() && len > 0)
+            {
+                CCLOGWARN("Text message to send is empty, but its length is greater than 0!");
+                //FIXME: Note that this text message contains '0x00' prefix, so its length calcuted by strlen is 0.
+                // we need to fix that if there is '0x00' in text message,
+                // since javascript language could support '0x00' inserted at the beginning or the middle of text message
+            }
+
+            cobj->broadcast(data);
+        }
+        else if (argv[0].isObject())
+        {
+            uint8_t *bufdata = NULL;
+            uint32_t len = 0;
+
+            JS::RootedObject jsobj(cx, argv[0].toObjectOrNull());
+            if (JS_IsArrayBufferObject(jsobj))
+            {
+                bufdata = JS_GetArrayBufferData(jsobj);
+                len = JS_GetArrayBufferByteLength(jsobj);
+            }
+            else if (JS_IsArrayBufferViewObject(jsobj))
+            {
+                bufdata = (uint8_t*)JS_GetArrayBufferViewData(jsobj);
+                len = JS_GetArrayBufferViewByteLength(jsobj);
+            }
+
+            cobj->broadcast(bufdata, len);
+        }
+        else
+        {
+            JS_ReportError(cx, "data type to be sent is unsupported.");
+            return false;
+        }
+
+        argv.rval().setUndefined();
+
+        return true;
+    }
+    JS_ReportError(cx, "wrong number of arguments: %d, was expecting %d", argc, 0);
+    return true;
+}
+
 bool js_cocos2dx_extension_WebSocketServer_stop(JSContext *cx, uint32_t argc, jsval *vp){
     JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
     JS::RootedObject obj(cx, args.thisv().toObjectOrNull());
@@ -288,22 +349,6 @@ bool js_cocos2dx_extension_WebSocketServer_stop(JSContext *cx, uint32_t argc, js
 
     if(argc == 0){
         cobj->stopAsync();
-        args.rval().setUndefined();
-        return true;
-    }
-    JS_ReportError(cx, "wrong number of arguments: %d, was expecting %d", argc, 0);
-    return false;
-}
-
-bool js_cocos2dx_extension_WebSocketServer_start(JSContext *cx, uint32_t argc, jsval *vp){
-    JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
-    JS::RootedObject obj(cx, args.thisv().toObjectOrNull());
-    js_proxy_t *proxy = jsb_get_js_proxy(obj);
-    WebSocketServer* cobj = (WebSocketServer *)(proxy ? proxy->ptr : NULL);
-    JSB_PRECONDITION2( cobj, cx, false, "Invalid Native Object");
-
-    if(argc == 0){
-        cobj->start();
         args.rval().setUndefined();
         return true;
     }
@@ -326,7 +371,6 @@ bool js_cocos2dx_extension_WebSocketServer_constructor(JSContext *cx, uint32_t a
 
         JS::RootedObject proto(cx, js_cocos2dx_websocketserver_prototype);
         JS::RootedObject obj(cx, JS_NewObject(cx, js_cocos2dx_websocketserver_class, proto, JS::NullPtr()));
-        //JS::RootedObject obj(cx, JS_NewObjectForConstructor(cx, js_cocos2dx_websocketserver_class, args));
 
         WebSocketServer* cobj = nullptr;
         if (argc == 2)
@@ -432,9 +476,11 @@ void register_jsb_websocketserver(JSContext *cx, JS::HandleObject global)
         JS_PS_END
     };
 
+
+
     static JSFunctionSpec funcs[] = {
         JS_FN("send",js_cocos2dx_extension_WebSocketServer_send, 2, JSPROP_PERMANENT | JSPROP_ENUMERATE),
-        JS_FN("start",js_cocos2dx_extension_WebSocketServer_start, 0, JSPROP_PERMANENT | JSPROP_ENUMERATE),
+        JS_FN("broadcast",js_cocos2dx_extension_WebSocketServer_broadcast, 1, JSPROP_PERMANENT | JSPROP_ENUMERATE),
         JS_FN("stop",js_cocos2dx_extension_WebSocketServer_stop, 0, JSPROP_PERMANENT | JSPROP_ENUMERATE),
         JS_FS_END
     };

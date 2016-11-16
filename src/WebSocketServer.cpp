@@ -217,9 +217,7 @@ void WsServerThreadHelper::joinWebSocketServerThread()
 void WsServerThreadHelper::closeAllConnections()
 {
     _subThreadWsServerConnectionsMutex.lock();
-    
-    _subThreadWsServerConnections.clear(); // FIXME
-
+    _subThreadWsServerConnections.clear();
     _subThreadWsServerConnectionsMutex.unlock();
 }
 
@@ -373,6 +371,9 @@ bool WebSocketServer::init(const Delegate& delegate,
         _wsProtocols[0].rx_buffer_size = WS_RX_BUFFER_SIZE;
     }
 
+    _wsHelper = new (std::nothrow) WsServerThreadHelper();
+    ret = _wsHelper->createWebSocketServerThread(*this);
+
     return ret;
 }
 
@@ -381,6 +382,7 @@ void WebSocketServer::send(int socketId, const std::string& message)
     if (_readyState == State::UP)
     {
         // In main thread
+
         Data* data = new (std::nothrow) Data();
         data->bytes = (char*)malloc(message.length() + 1);
         // Make sure the last byte is '\0'
@@ -429,6 +431,23 @@ void WebSocketServer::send(int socketId, const unsigned char* binaryMsg, unsigne
     }
 }
 
+void WebSocketServer::broadcast(const std::string& message)
+{
+    for(auto const& ent1 : _wsHelper->_subThreadWsServerConnections) 
+    {
+        send(ent1.first, message);
+    }
+}
+
+
+void WebSocketServer::broadcast(const unsigned char* binaryMsg, unsigned int len)
+{
+    for(auto const& ent1 : _wsHelper->_subThreadWsServerConnections) 
+    {
+        send(ent1.first, binaryMsg, len);
+    }
+}
+
 void WebSocketServer::stop()
 {
     _readStateMutex.lock();
@@ -446,12 +465,23 @@ void WebSocketServer::stop()
     // 'closed' state has to be set before quit websocket thread.
     _readyState = State::DOWN;
     _readStateMutex.unlock();
-    
+
     _wsHelper->quitWebSocketServerThread();
     LOGD("Waiting WebSocketServer (%p) to exit!\n", this);
+    
+    std::shared_ptr<std::atomic<bool>> isDestroyed = _isDestroyed;
+    _wsHelper->sendMessageToCocosThread([this, isDestroyed](){
+        if (*isDestroyed)
+        {
+            LOGD("WebSocketServer instance was destroyed!\n");
+        }
+        else
+        {
+            _delegate->onServerDown(this);
+        }
+    });
+
     _wsHelper->joinWebSocketServerThread();
-    // Since 'onConnectionClosed' didn't post message to Cocos Thread for invoking 'onDisconnection' callback, do it here.
-    // onDisconnection must be invoked at the end of this method.
 }
 
 void WebSocketServer::stopAsync()
@@ -459,10 +489,23 @@ void WebSocketServer::stopAsync()
     _wsHelper->quitWebSocketServerThread();
 }
 
-void WebSocketServer::start()
+void WebSocketServer::onInit()
 {
-    _wsHelper = new (std::nothrow) WsServerThreadHelper();
-    _wsHelper->createWebSocketServerThread(*this);
+    _readStateMutex.lock();
+    _readyState = State::UP;
+    _readStateMutex.unlock();
+
+    std::shared_ptr<std::atomic<bool>> isDestroyed = _isDestroyed;
+    _wsHelper->sendMessageToCocosThread([this, isDestroyed](){
+        if (*isDestroyed)
+        {
+            LOGD("WebSocketServer instance was destroyed!\n");
+        }
+        else
+        {
+            _delegate->onServerUp(this);
+        }
+    });
 }
 
 WebSocketServer::State WebSocketServer::getReadyState()
@@ -525,13 +568,7 @@ void WebSocketServer::onSubThreadStarted()
 
     _wsContext = lws_create_context(&info);
 
-    if (nullptr != _wsContext)
-    {
-        _readStateMutex.lock();
-        _readyState = State::STARTING;
-        _readStateMutex.unlock();
-    }
-    else
+    if (nullptr == _wsContext)
     {
         CCLOGERROR("Create websocket context failed!");
     }
@@ -818,12 +855,12 @@ int WebSocketServer::onSocketCallback(struct lws *wsi,
     switch (reason)
     {
         case LWS_CALLBACK_PROTOCOL_INIT:
+            onInit();
             break;
 
         case LWS_CALLBACK_ESTABLISHED:
-            LOGD("LWS_CALLBACK_ESTABLISHED");
-            lws_callback_on_writable(wsi);
             onConnectionOpened(socketId, wsi);
+            lws_callback_on_writable(wsi);
             break;
 
         case LWS_CALLBACK_SERVER_WRITEABLE:
@@ -832,12 +869,10 @@ int WebSocketServer::onSocketCallback(struct lws *wsi,
             break;
         
         case LWS_CALLBACK_RECEIVE:
-            LOGD("LWS_CALLBACK_RECEIVE");
             onReceivePendingMessages(socketId, in, len);
             break;
 
         case LWS_CALLBACK_CLOSED:
-            LOGD("LWS_CALLBACK_CLOSED");
             onConnectionClosed(socketId);
             break;
 

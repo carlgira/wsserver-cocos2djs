@@ -14,37 +14,38 @@ var HelloWorldLayer = cc.Layer.extend({
 
         layer = this; 
         this.server.onServerUp = function(evt) {
-            layer.appendTextConsole("WebsocketServer:: serverStarted");
+            layer.appendTextConsole("Server::onServerUp() -> Server Started");
         };
 
         this.server.onServerDown = function(evt) {
-            layer.appendTextConsole("WebsocketServer:: serverStarted");
+            layer.appendTextConsole("Server::onServerDown() -> Server Stoped");
         };
 
-        this.server.onConnect = function(evt) {
-            layer.appendTextConsole("WebsocketServer:: onConnect");
+        this.server.onConnection = function(evt) {
+            layer.appendTextConsole("Server::onConnection() -> ClientId=" + evt.socketId );
         };
 
         this.server.onMessage = function(evt) {
-            layer.appendTextConsole("WebsocketServer:: onMessage");
-            layer.server.send("Hello!");
+            layer.appendTextConsole("Server::onMessage() -> ClientId=" + evt.socketId + ", msg=" + evt.data);
+            layer.server.send(evt.socketId, "Hello!");
         };
 
         this.server.onDisconnection = function(evt) {
-            layer.appendTextConsole("WebsocketServer:: onDisconnect");
+            layer.appendTextConsole("Server::onDisconnection()  -> ClientId=" + evt.socketId);
         };
 
         this.server.onError = function(evt) {
-            layer.appendTextConsole("WebsocketServer:: onError");
+            layer.appendTextConsole("Server::onError()");
         };
-        
 
-        var startServerButton = new ccui.Button();
-        startServerButton.setTitleText("Start Server");
-        startServerButton.setPosition(size.width/4 , size.height/8 );
-        startServerButton.addTouchEventListener(this.startServer, this);
-        startServerButton.setTitleFontSize(30);
-        this.addChild(startServerButton);
+
+        var broadcastButton = new ccui.Button();
+        broadcastButton.setTitleText("Broadcast");
+        broadcastButton.setPosition(size.width*1/4 , size.height/8);
+        broadcastButton.addTouchEventListener(this.broadcastMsg, this);
+        broadcastButton.setTitleFontSize(30);
+        this.addChild(broadcastButton);
+        
 
         var stopServerButton = new ccui.Button();
         stopServerButton.setTitleText("Stop Server");
@@ -76,11 +77,13 @@ var HelloWorldLayer = cc.Layer.extend({
 
         return true;
     },
-    startServer : function(sender, type){
+    broadcastMsg : function(sender, type){
         switch (type)
         {
             case ccui.Widget.TOUCH_ENDED:
-                this.server.start();
+                if(this.server.readyState ===  WebSocketServer.UP){ // DOWN, STARTING, STOPPING
+                    this.server.broadcast("To all!");  
+                }
             break;
         }
     },
@@ -102,21 +105,21 @@ var HelloWorldLayer = cc.Layer.extend({
                 self = this;
 
                 webSocket.onopen = function(evt) {
-                    self.appendTextConsole("WebSocketClient:: Connected to server");
-                    webSocket.send("TestMessage");
+                    self.appendTextConsole("Client::onopen() -> Connected to server");
+                    webSocket.send("Test");
                 };
 
                 webSocket.onmessage = function(evt) {
                     var textStr = evt.data;
-                    self.appendTextConsole("WebSocketClient:: New message from server, msg = " +  evt);
+                    self.appendTextConsole("Client::onmessage() -> msg=" +  evt.data);
                 };
 
                 webSocket.onerror = function(evt) {
-                    self.appendTextConsole("WebSocketClient:: Connection error to server");
+                    self.appendTextConsole("Client::onerror()");
                 };
 
                 webSocket.onclose = function(evt) {
-                    self.appendTextConsole("WebSocketClient:: Connection closed");
+                    self.appendTextConsole("Client::onclose()");
                 };
                 break;
         }
