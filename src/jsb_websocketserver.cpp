@@ -126,16 +126,7 @@ public:
             
             JS::RootedValue args(cx, OBJECT_TO_JSVAL(jsobj));
             ScriptingCore::getInstance()->executeFunctionWithOwner(OBJECT_TO_JSVAL(_JSDelegate.ref()), "onDisconnection", 1, args.address());
-            
-            auto copy = &p->obj;
-            JS::RemoveObjectRoot(cx, copy);
-            jsb_remove_proxy(p);
         }
-        
-        // Delete WebSocketServer instance
-        CC_SAFE_DELETE(ws);
-        // Delete self at last while websocketserver was closed.
-        delete this;
     }
 
     virtual void onError(WebSocketServer* ws, const WebSocketServer::ErrorCode& error)
